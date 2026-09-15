@@ -26,7 +26,15 @@ Right-click the pill (or use the refresh button in the popup) to force an immedi
    ```json
    { "id": "io.github.klemengit.scaleway-cost" }
    ```
-2. Export both `SCW_API_KEY` (a Scaleway API secret key) and `SCW_ORG_ID` (its organization ID) in the session environment — e.g. via Hyprland's `envs.local.lua` or your shell profile. Both are required; the widget shows an error pill if either is missing.
+2. Get both values from the [Scaleway console](https://console.scaleway.com/):
+   - `SCW_API_KEY` — create an API key under **IAM → API Keys**, scoped to (or belonging to a member with) read access to billing. Use the key's **Secret Key**, not the Access Key.
+   - `SCW_ORG_ID` — your **Organization ID**, shown under **Organization → Settings** (or in Account settings).
+3. Export both in the session environment — e.g. via Hyprland's `envs.local.lua`:
+   ```lua
+   hl.env("SCW_API_KEY", "<secret key>")
+   hl.env("SCW_ORG_ID", "<organization id>")
+   ```
+   or your shell profile. Both are required; the widget shows an error pill if either is missing.
 
 ### Settings
 
