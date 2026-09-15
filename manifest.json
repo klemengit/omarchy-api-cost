@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.klemengit.scaleway-cost",
+  "name": "Scaleway Cost",
+  "version": "1.0.0",
+  "author": "klemengit",
+  "license": "MIT",
+  "description": "Current-month Scaleway net spend in the bar, with a category-breakdown popup.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Scaleway Cost",
+    "description": "Net spend this month, a per-category breakdown popup, and a manual refresh.",
+    "category": "Info",
+    "allowMultiple": false
+  }
+}
