@@ -107,194 +107,268 @@ BarWidget {
     }
   }
 
-  PopupCard {
+  KeyboardPanel {
     id: popup
     anchorItem: root
     bar: root.bar
     owner: root
     open: root.popupOpen
+    focusTarget: keyCatcher
     contentWidth: popup.fittedContentWidth(Style.space(420))
     contentHeight: popup.fittedContentHeight(flick.implicitHeight, Style.space(520))
 
-    Flickable {
-      id: flick
+    // Keyboard focus only reaches PopupWindow-based popups after a click/hover
+    // routes it there, so a plain Keys.onPressed on the Flickable below isn't
+    // reliable — KeyboardPanel primes real layer-shell keyboard focus instead,
+    // and PanelKeyCatcher is the dispatcher that turns key events into
+    // signals (textKey "r" here, plus Escape-to-close for free).
+    PanelKeyCatcher {
+      id: keyCatcher
       anchors.fill: parent
-      contentWidth: width
-      contentHeight: column.implicitHeight
-      readonly property real implicitHeight: column.implicitHeight
-      clip: true
-      boundsBehavior: Flickable.StopAtBounds
-      flickableDirection: Flickable.VerticalFlick
-      interactive: contentHeight > height
-      ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+      onCloseRequested: root.close()
+      onTextKey: function(t) { if (t === "r" || t === "R") root.refresh() }
 
-      Column {
-        id: column
-        width: flick.width
-        spacing: Style.space(10)
+      Flickable {
+        id: flick
+        anchors.fill: parent
+        // Static gutter for the scrollbar, always reserved rather than
+        // computed from the ScrollBar's own visible/width — those track
+        // its fade animation, not layout, and left the cost column flush
+        // against the edge while the bar was actually showing.
+        anchors.rightMargin: Style.space(10)
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        readonly property real implicitHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-        // ---------- Header ----------
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
+          Column {
+          id: column
+          width: flick.width
+          spacing: Style.space(10)
+
+          // ---------- Header ----------
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Text {
+              textFormat: Text.PlainText
+              text: ""
+              color: root.bar.foreground
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.iconLarge
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Column {
+              width: parent.width - Style.space(66)
+              spacing: Style.space(2)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "Scaleway — Cost Dashboard"
+                color: root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                visible: root.updatedLabel !== ""
+                text: "Updated " + root.updatedLabel
+                color: Qt.darker(root.bar.foreground, 1.5)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            Button {
+              iconText: "󰑐"
+              iconSpinning: root.loading
+              foreground: root.bar.foreground
+              tooltipText: "Refresh (r)"
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY
+              anchors.verticalCenter: parent.verticalCenter
+              onClicked: root.refresh()
+            }
+          }
 
           Text {
             textFormat: Text.PlainText
-            text: ""
-            color: root.bar.foreground
+            visible: !root.ok
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: root.errorText || "Fetching…"
+            color: root.bar.urgent
             font.family: root.bar.fontFamily
-            font.pixelSize: Style.font.iconLarge
-            anchors.verticalCenter: parent.verticalCenter
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          // ---------- Summary ----------
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+            visible: root.ok
+
+            Row {
+              width: parent.width
+              Text {
+                textFormat: Text.PlainText
+                text: "Total net spend"
+                color: Qt.darker(root.bar.foreground, 1.3)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.body
+                width: parent.width * 0.6
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: root.symbol + root.net.toFixed(2)
+                color: root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                width: parent.width * 0.4
+                horizontalAlignment: Text.AlignRight
+              }
+            }
+
+            Row {
+              width: parent.width
+              Text {
+                textFormat: Text.PlainText
+                text: "Before credits"
+                color: Qt.darker(root.bar.foreground, 1.5)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                width: parent.width * 0.6
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: root.symbol + root.beforeCredits.toFixed(2)
+                color: Qt.darker(root.bar.foreground, 1.2)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                width: parent.width * 0.4
+                horizontalAlignment: Text.AlignRight
+              }
+            }
+
+            Row {
+              width: parent.width
+              visible: root.credit !== 0
+              Text {
+                textFormat: Text.PlainText
+                text: "Free tier credit"
+                color: Qt.darker(root.bar.foreground, 1.5)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                width: parent.width * 0.6
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: root.symbol + root.credit.toFixed(2)
+                color: root.bar.urgent
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                width: parent.width * 0.4
+                horizontalAlignment: Text.AlignRight
+              }
+            }
+          }
+
+          // ---------- Breakdown by resource ----------
+          PanelSeparator {
+            visible: root.ok && root.resources.length > 0
+            foreground: root.bar.foreground
+          }
+
+          PanelSectionHeader {
+            visible: root.ok && root.resources.length > 0
+            text: "Breakdown by resource"
+            foreground: root.bar.foreground
           }
 
           Column {
-            width: parent.width - Style.space(66)
-            spacing: Style.space(2)
-
-            Text {
-              textFormat: Text.PlainText
-              text: "Scaleway — Cost Dashboard"
-              color: root.bar.foreground
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.subtitle
-              font.bold: true
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              visible: root.updatedLabel !== ""
-              text: "Updated " + root.updatedLabel
-              color: Qt.darker(root.bar.foreground, 1.5)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-          }
-
-          Button {
-            iconText: ""
-            iconSpinning: root.loading
-            foreground: root.bar.foreground
-            tooltipText: "Refresh"
-            horizontalPadding: Style.spacing.controlPaddingX
-            verticalPadding: Style.spacing.controlPaddingY
-            anchors.verticalCenter: parent.verticalCenter
-            onClicked: root.refresh()
-          }
-        }
-
-        Text {
-          textFormat: Text.PlainText
-          visible: !root.ok
-          width: parent.width
-          wrapMode: Text.WordWrap
-          text: root.errorText || "Fetching…"
-          color: root.bar.urgent
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-
-        // ---------- Summary ----------
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          visible: root.ok
-
-          Row {
             width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Total net spend"
-              color: Qt.darker(root.bar.foreground, 1.3)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.body
-              width: parent.width * 0.6
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.symbol + root.net.toFixed(2)
-              color: root.bar.foreground
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-              width: parent.width * 0.4
-              horizontalAlignment: Text.AlignRight
-            }
-          }
+            spacing: Style.space(5)
+            visible: root.ok && root.resources.length > 0
 
-          Row {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: "Before credits"
-              color: Qt.darker(root.bar.foreground, 1.5)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              width: parent.width * 0.6
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.symbol + root.beforeCredits.toFixed(2)
-              color: Qt.darker(root.bar.foreground, 1.2)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              width: parent.width * 0.4
-              horizontalAlignment: Text.AlignRight
-            }
-          }
+            Repeater {
+              model: root.resources
 
-          Row {
-            width: parent.width
-            visible: root.credit !== 0
-            Text {
-              textFormat: Text.PlainText
-              text: "Free tier credit"
-              color: Qt.darker(root.bar.foreground, 1.5)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              width: parent.width * 0.6
-            }
-            Text {
-              textFormat: Text.PlainText
-              text: root.symbol + root.credit.toFixed(2)
-              color: root.bar.urgent
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              width: parent.width * 0.4
-              horizontalAlignment: Text.AlignRight
-            }
-          }
-        }
-
-        // ---------- Breakdown by resource ----------
-        PanelSeparator {
-          visible: root.ok && root.resources.length > 0
-          foreground: root.bar.foreground
-        }
-
-        PanelSectionHeader {
-          visible: root.ok && root.resources.length > 0
-          text: "Breakdown by resource"
-          foreground: root.bar.foreground
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(5)
-          visible: root.ok && root.resources.length > 0
-
-          Repeater {
-            model: root.resources
-
-            Column {
-              required property var modelData
-              width: parent.width
-
-              Row {
+              Column {
+                required property var modelData
                 width: parent.width
+
+                Row {
+                  width: parent.width
+                  Text {
+                    textFormat: Text.PlainText
+                    text: modelData.name
+                    color: root.bar.foreground
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    width: parent.width * 0.68
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    text: root.symbol + Number(modelData.cost).toFixed(2)
+                    color: Number(modelData.cost) < 0 ? root.bar.urgent : Qt.darker(root.bar.foreground, 1.2)
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    width: parent.width * 0.32
+                    horizontalAlignment: Text.AlignRight
+                  }
+                }
+
                 Text {
                   textFormat: Text.PlainText
-                  text: modelData.name
-                  color: root.bar.foreground
+                  text: modelData.tokenSummary !== undefined
+                    ? modelData.category + " · " + modelData.tokenSummary
+                    : modelData.category + " · " + modelData.qty + " " + modelData.unit
+                  color: Qt.darker(root.bar.foreground, 1.7)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          // ---------- Recent invoices ----------
+          PanelSeparator {
+            visible: root.ok && root.invoices.length > 0
+            foreground: root.bar.foreground
+          }
+
+          PanelSectionHeader {
+            visible: root.ok && root.invoices.length > 0
+            text: "Recent invoices"
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+            visible: root.ok && root.invoices.length > 0
+
+            Repeater {
+              model: root.invoices
+
+              Row {
+                required property var modelData
+                width: parent.width
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: modelData.period + "  ·  " + modelData.state
+                  color: Qt.darker(root.bar.foreground, 1.3)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.bodySmall
                   width: parent.width * 0.68
@@ -302,75 +376,19 @@ BarWidget {
                 }
                 Text {
                   textFormat: Text.PlainText
-                  text: root.symbol + Number(modelData.cost).toFixed(2)
-                  color: Number(modelData.cost) < 0 ? root.bar.urgent : Qt.darker(root.bar.foreground, 1.2)
+                  text: root.symbol + Number(modelData.total).toFixed(2)
+                  color: root.bar.foreground
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.bodySmall
+                  font.bold: true
                   width: parent.width * 0.32
                   horizontalAlignment: Text.AlignRight
                 }
               }
-
-              Text {
-                textFormat: Text.PlainText
-                text: modelData.tokenSummary !== undefined
-                  ? modelData.category + " · " + modelData.tokenSummary
-                  : modelData.category + " · " + modelData.qty + " " + modelData.unit
-                color: Qt.darker(root.bar.foreground, 1.7)
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.caption
-              }
             }
           }
         }
-
-        // ---------- Recent invoices ----------
-        PanelSeparator {
-          visible: root.ok && root.invoices.length > 0
-          foreground: root.bar.foreground
-        }
-
-        PanelSectionHeader {
-          visible: root.ok && root.invoices.length > 0
-          text: "Recent invoices"
-          foreground: root.bar.foreground
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          visible: root.ok && root.invoices.length > 0
-
-          Repeater {
-            model: root.invoices
-
-            Row {
-              required property var modelData
-              width: parent.width
-
-              Text {
-                textFormat: Text.PlainText
-                text: modelData.period + "  ·  " + modelData.state
-                color: Qt.darker(root.bar.foreground, 1.3)
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                width: parent.width * 0.68
-                elide: Text.ElideRight
-              }
-              Text {
-                textFormat: Text.PlainText
-                text: root.symbol + Number(modelData.total).toFixed(2)
-                color: root.bar.foreground
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
-                width: parent.width * 0.32
-                horizontalAlignment: Text.AlignRight
-              }
-            }
-          }
-        }
-      }
+    }
     }
   }
 }
