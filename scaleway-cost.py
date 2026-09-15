@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-ORG_ID = os.environ.get("SCW_ORG_ID", "e6cac714-33c8-4f79-9475-4598d38670fe")
 CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£"}
 
 # Generative-APIs line items look like "GLM 5.2 - Input - FR-PAR" or
@@ -125,9 +124,14 @@ def main() -> None:
         emit(False, error="SCW_API_KEY not set in the session environment")
         return
 
+    org_id = os.environ.get("SCW_ORG_ID")
+    if not org_id:
+        emit(False, error="SCW_ORG_ID not set in the session environment")
+        return
+
     try:
         consumptions = get_json(
-            f"https://api.scaleway.com/billing/v2beta1/consumptions?organization_id={ORG_ID}",
+            f"https://api.scaleway.com/billing/v2beta1/consumptions?organization_id={org_id}",
             api_key,
         ).get("consumptions", [])
         invoices = get_json(
