@@ -10,6 +10,7 @@ can show an error state instead of crashing.
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -17,9 +18,78 @@ from urllib.request import Request, urlopen
 ORG_ID = os.environ.get("SCW_ORG_ID", "e6cac714-33c8-4f79-9475-4598d38670fe")
 CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£"}
 
+# Generative-APIs line items look like "GLM 5.2 - Input - FR-PAR" or
+# "DeepSeek V4 Flash - Input - Cached - fr-par". Split off the model and
+# region so input/output rows for the same model can be merged onto one line.
+MODEL_DIRECTION_RE = re.compile(
+    r"^(.*?)\s*-\s*(Input|Output)(?:\s*-\s*Cached)?\s*-\s*([A-Za-z]{2}-[A-Za-z]{3,4})$",
+    re.IGNORECASE,
+)
+
 
 def money(value: dict) -> float:
     return value.get("units", 0) + value.get("nanos", 0) / 1_000_000_000
+
+
+def split_model_resource(name: str):
+    m = MODEL_DIRECTION_RE.match(name)
+    if not m:
+        return None
+    model, direction, region = m.groups()
+    return model.strip(), region.upper(), direction.lower()
+
+
+def fmt_token_qty(k_tokens: float) -> str:
+    # Scaleway reports Generative-APIs billed_quantity in thousands of tokens.
+    if k_tokens >= 1000:
+        return f"{k_tokens / 1000:.2f}M"
+    return f"{k_tokens:.0f}K"
+
+
+def build_resources(consumptions: list) -> list:
+    plain = []
+    grouped = {}
+    for item in consumptions:
+        name = item.get("resource_name", "N/A")
+        cost = money(item.get("value", {}))
+        parsed = split_model_resource(name) if item.get("unit") == "token" else None
+        if parsed is None:
+            plain.append({
+                "name": name,
+                "category": item.get("category_name", "N/A"),
+                "qty": item.get("billed_quantity", "N/A"),
+                "unit": item.get("unit", "N/A"),
+                "cost": round(cost, 2),
+            })
+            continue
+
+        model, region, direction = parsed
+        group = grouped.setdefault((model, region), {
+            "name": f"{model} ({region})",
+            "category": item.get("category_name", "N/A"),
+            "cost": 0.0,
+            "inputK": 0.0,
+            "outputK": 0.0,
+        })
+        group["cost"] += cost
+        try:
+            qty = float(item.get("billed_quantity", 0) or 0)
+        except (TypeError, ValueError):
+            qty = 0.0
+        group["inputK" if direction == "input" else "outputK"] += qty
+
+    merged = [
+        {
+            "name": g["name"],
+            "category": g["category"],
+            "cost": round(g["cost"], 2),
+            "unit": "token",
+            "tokenSummary": f"Input {fmt_token_qty(g['inputK'])} · Output {fmt_token_qty(g['outputK'])} tokens",
+        }
+        for g in grouped.values()
+    ]
+
+    return sorted(plain + merged, key=lambda r: r["cost"], reverse=True)
 
 
 def emit(ok: bool, **fields) -> None:
@@ -90,20 +160,7 @@ def main() -> None:
     if abs(net_total) < 0.005:
         net_total = 0.0
 
-    resources = sorted(
-        (
-            {
-                "name": item.get("resource_name", "N/A"),
-                "category": item.get("category_name", "N/A"),
-                "qty": item.get("billed_quantity", "N/A"),
-                "unit": item.get("unit", "N/A"),
-                "cost": round(money(item.get("value", {})), 2),
-            }
-            for item in consumptions
-        ),
-        key=lambda r: r["cost"],
-        reverse=True,
-    )
+    resources = build_resources(consumptions)
 
     invoice_rows = [
         {

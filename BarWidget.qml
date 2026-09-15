@@ -313,7 +313,9 @@ BarWidget {
 
               Text {
                 textFormat: Text.PlainText
-                text: modelData.category + " · " + modelData.qty + " " + modelData.unit
+                text: modelData.tokenSummary !== undefined
+                  ? modelData.category + " · " + modelData.tokenSummary
+                  : modelData.category + " · " + modelData.qty + " " + modelData.unit
                 color: Qt.darker(root.bar.foreground, 1.7)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
