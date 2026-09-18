@@ -1,4 +1,4 @@
-from . import scaleway
+from . import openrouter, scaleway
 
 # Tab order in the popup.
-PROVIDERS = [scaleway]
+PROVIDERS = [scaleway, openrouter]
