@@ -9,7 +9,9 @@ Providers:
 
 Only providers whose credentials are set get a tab; with a single provider the tab row is hidden.
 
-Keys in the popup: `r` refreshes, `Tab` / `h` / `l` switch tabs, `1`–`9` jump to a tab, `Esc` closes. Data is fetched each time the popup opens.
+Keys in the popup: `r` refreshes, `Tab` / `h` / `l` switch tabs, `1`–`9` jump to a tab, `Esc` closes.
+
+The popup paints the last numbers immediately and only refetches if they are older than five minutes; `r` and the refresh button always refetch. The payload and the selected tab are cached in `~/.local/state/omarchy/api-cost/state.json`, so the tab you were on survives a shell restart. Set `"maxAgeSeconds"` on the widget's `bar.layout` entry in `shell.json` to change the five minutes.
 
 ## Requirements
 
@@ -46,5 +48,7 @@ To open the popup from a keybinding: `omarchy-shell shell toggle io.github.kleme
 ## How it works
 
 `api-cost.py` runs every provider whose environment variables are set (in parallel) and prints a single JSON line. Each provider module in `providers/` returns the same shape — a summary list and titled sections of rows, with amounts pre-formatted — so `BarWidget.qml` renders every tab with the same code. Nothing raises: a failing provider reports `"ok": false` with an error message in its own tab, and the other tabs are unaffected.
+
+`BarWidget.qml` caches each payload to `~/.local/state/omarchy/api-cost/state.json` and hydrates from it at startup, so opening the popup never shows an empty panel while a fetch is in flight.
 
 To add a provider, write `providers/<name>.py` with `ID`, `NAME`, `ENV_VARS`, and a `fetch()` returning `common.result(...)`, then add it to `PROVIDERS` in `providers/__init__.py`.

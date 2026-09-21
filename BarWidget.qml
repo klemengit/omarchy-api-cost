@@ -7,14 +7,19 @@ import qs.Commons
 
 // Icon-only bar pill; the popup is a cost dashboard with one tab per
 // configured provider (summary, per-item breakdown sections). Data comes
-// from api-cost.py, fetched when the popup opens and on demand ("r").
-// The script never raises, so a failing provider shows an error in its own
-// tab instead of taking the bar down.
+// from api-cost.py, fetched on demand ("r") and when the popup opens onto
+// a payload older than maxAgeSeconds. The last payload and the selected
+// tab are cached on disk, so a reopen — including the first one after a
+// shell restart — paints the previous numbers immediately and refreshes
+// underneath. The script never raises, so a failing provider shows an
+// error in its own tab instead of taking the bar down.
 BarWidget {
   id: root
   moduleName: "io.github.klemengit.api-cost"
 
   readonly property string scriptPath: String(Qt.resolvedUrl("api-cost.py")).replace(/^file:\/\//, "")
+  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/api-cost"
+  readonly property int maxAgeSeconds: setting("maxAgeSeconds", 300)
 
   property bool popupOpen: false
   property bool loading: false
@@ -22,6 +27,8 @@ BarWidget {
   property string errorText: ""
   property var providers: []
   property string currentId: ""
+  property real lastFetchMs: 0
+  property bool stateLoaded: false
 
   readonly property var current: {
     for (var i = 0; i < providers.length; i++)
@@ -37,8 +44,11 @@ BarWidget {
   function open() { popupOpen = true }
   function close() { popupOpen = false }
 
-  function refresh() {
+  // `force` is the button and the "r" key; opening the popup passes nothing
+  // and so only refetches once the cached payload has aged out.
+  function refresh(force) {
     if (proc.running) return
+    if (!force && lastFetchMs > 0 && Date.now() - lastFetchMs < maxAgeSeconds * 1000) return
     loading = true
     proc.running = true
   }
@@ -61,13 +71,74 @@ BarWidget {
       var data = JSON.parse(String(raw).trim())
       root.providers = data.providers || []
       root.errorText = data.error || ""
+      root.lastFetchMs = Date.now()
+      saveTimer.restart()
     } catch (e) {
-      root.providers = []
+      // Keep whatever is on screen; a torn read is not worth blanking the
+      // panel for, and the next refresh overwrites it anyway.
       root.errorText = "Bad response from api-cost.py"
     }
   }
 
+  // Hydrate from the cache written by the previous run, unless a fetch has
+  // already landed. `updated` is the fetch time recorded by api-cost.py, so
+  // it also decides whether the cache is still fresh enough to skip a fetch.
+  function loadState(raw) {
+    stateLoaded = true
+    try {
+      var data = JSON.parse(String(raw).trim())
+      if (data.tab && currentId === "") root.currentId = data.tab
+      if (everLoaded || !data.providers || data.providers.length === 0) return
+      root.providers = data.providers
+      root.errorText = data.error || ""
+      var ms = Date.parse(data.updated || "")
+      root.lastFetchMs = isNaN(ms) ? 0 : ms
+    } catch (e) {
+      // No cache yet, or an unreadable one: first open just fetches.
+    }
+  }
+
+  function saveState() {
+    // An empty payload carries nothing worth caching, and writing it would
+    // drop the numbers the next startup wants to paint.
+    if (!stateLoaded || providers.length === 0) return
+    stateFile.setText(JSON.stringify({
+      version: 1,
+      tab: root.currentId,
+      updated: new Date(root.lastFetchMs || Date.now()).toISOString(),
+      error: root.errorText,
+      providers: root.providers
+    }) + "\n")
+  }
+
   onPopupOpenChanged: if (popupOpen) refresh()
+  onCurrentIdChanged: saveTimer.restart()
+
+  FileView {
+    id: stateFile
+    path: root.stateDir + "/state.json"
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadState(text())
+    onLoadFailed: root.loadState("")
+  }
+
+  // Coalesces the writes that a fetch plus a tab switch would otherwise fire
+  // back to back.
+  Timer {
+    id: saveTimer
+    interval: 250
+    onTriggered: root.saveState()
+  }
+
+  Process {
+    id: mkdirProc
+    command: ["mkdir", "-p", root.stateDir]
+    onExited: stateFile.reload()
+  }
+
+  Component.onCompleted: mkdirProc.running = true
 
   visible: true
   implicitWidth: pill.implicitWidth
@@ -121,7 +192,7 @@ BarWidget {
       onTabRequested: function(direction) { root.shiftTab(direction) }
       onMoveRequested: function(dx, dy) { if (dx !== 0) root.shiftTab(dx) }
       onTextKey: function(t) {
-        if (t === "r" || t === "R") root.refresh()
+        if (t === "r" || t === "R") root.refresh(true)
         else if (t >= "1" && t <= "9" && Number(t) <= root.providers.length)
           root.selectIndex(Number(t) - 1)
       }
@@ -193,7 +264,7 @@ BarWidget {
               horizontalPadding: Style.spacing.controlPaddingX
               verticalPadding: Style.spacing.controlPaddingY
               anchors.verticalCenter: parent.verticalCenter
-              onClicked: root.refresh()
+              onClicked: root.refresh(true)
             }
           }
 
@@ -218,7 +289,8 @@ BarWidget {
             wrapMode: Text.WordWrap
             text: root.current && root.current.error ? root.current.error
               : root.errorText !== "" ? root.errorText
-              : "Fetching…"
+              : root.loading ? "Fetching…"
+              : "No providers configured — see the README for the keys to set."
             color: root.bar.urgent
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.bodySmall
